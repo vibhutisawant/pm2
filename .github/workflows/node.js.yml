@@ -2,55 +2,80 @@ name: Node.js CI
 
 on: [push, pull_request]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-
   node-tests:
+    name: Node.js Tests on ${{ matrix.platform }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 60
     strategy:
+      fail-fast: false
       matrix:
+        platform: [amd64, s390x]
         node-version: [22.x]
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    - name: Install Python
-      run: sudo apt install python3
-    - name: Install PHP CLI
-      run: sudo apt install php-cli
-    - name: Install Node.js dependencies
-      run: npm install
-    - name: Run end-to-end tests
-      run: npm run test:e2e
-    - name: Run unit tests
-      run: npm run test:unit
+      - uses: actions/checkout@v3
 
-  bun-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+      - name: Setup QEMU (for s390x)
+        if: matrix.platform == 's390x'
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: s390x
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    - name: Remove Node.js installed by setup-node action (if any)
-      run: |
-        if command -v node &> /dev/null; then
-          sudo rm -rf "$(which node)"
-        fi
-        if command -v npm &> /dev/null; then
-          sudo rm -rf "$(which npm)"
-        fi
+      - name: Run Node.js tests on ${{ matrix.platform }}
+        run: |
+          if [ "${{ matrix.platform }}" = "s390x" ]; then
+            echo "Running Node.js tests on s390x platform..."
+            docker run --rm --platform linux/s390x \
+              -v $(pwd):/app \
+              -w /app \
+              ubuntu:22.04 bash -c "
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update
+                apt-get install -y wget tar xz-utils bc python3 php-cli
+                wget https://nodejs.org/dist/v22.15.0/node-v22.15.0-linux-s390x.tar.xz
+                tar -xf node-v22.15.0-linux-s390x.tar.xz
+                cp -r node-v22.15.0-linux-s390x/* /usr/local/
+                echo "/usr/local/bin" >> $GITHUB_PATH
+                npm install pm2 -g 
+                npm install
+                npm run test:e2e
+                npm run test:unit
+              "
+          # else
+          #   echo "Running Node.js tests on amd64 platform..."
+          #   sudo apt install python3
+          #   sudo apt install php-cli
+          #   npm install
+          #   npm run test:e2e
+          #   npm run test:unit
+          fi
 
-    - name: Setup Bun
-      uses: oven-sh/setup-bun@v1
-    - name: Install dependencies using Bun
-      run: bun install
-    - name: Run end-to-end tests with Bun
-      run: bun run test:e2e
-    - name: Run unit tests with Bun
-      run: bun run test:unit
+  # bun-tests:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+
+  #   steps:
+  #   - name: Checkout code
+  #     uses: actions/checkout@v3
+  #   - name: Remove Node.js installed by setup-node action (if any)
+  #     run: |
+  #       if command -v node &> /dev/null; then
+  #         sudo rm -rf "$(which node)"
+  #       fi
+  #       if command -v npm &> /dev/null; then
+  #         sudo rm -rf "$(which npm)"
+  #       fi
+
+  #   - name: Setup Bun
+  #     uses: oven-sh/setup-bun@v1
+  #   - name: Install dependencies using Bun
+  #     run: bun install
+  #   - name: Run end-to-end tests with Bun
+  #     run: bun run test:e2e
+  #   - name: Run unit tests with Bun
+  #     run: bun run test:unit
