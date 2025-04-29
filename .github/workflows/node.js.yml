@@ -36,8 +36,10 @@ jobs:
               -w /app \
               -e USER=$(whoami) \
               ubuntu:22.04 bash -c "
-                arch
-                cat /etc/os-release
+                printenv
+                export PWD=$(pwd)
+                echo $PWD
+                echo $USER
                 export DEBIAN_FRONTEND=noninteractive
                 apt-get update
                 apt-get install -y wget tar xz-utils bc python3 php-cli gcc curl
